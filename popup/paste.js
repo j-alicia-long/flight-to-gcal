@@ -26,7 +26,7 @@
 
   // ─── Parse ────────────────────────────────────────────────────────────────
 
-  parseBtn.addEventListener('click', () => {
+  parseBtn.addEventListener('click', async () => {
     const text = textarea.value.trim();
     if (!text) {
       showPasteStatus('Paste your flight confirmation text first.', 'error');
@@ -34,9 +34,19 @@
     }
     hidePasteStatus();
 
-    segments = FlightParser.parseEmail(text);
+    segments = FlightParser.parseEmail(text).map((s) => ({ ...s, source: 'regex' }));
+
+    // Pattern matching came up short? Ask Chrome's on-device AI (Gemini
+    // Nano, 100% local) for a second opinion — its output goes through the
+    // same deterministic airport/timezone pipeline.
+    if (FlightAI.isIncomplete(segments)) {
+      await tryAiFallback(text);
+    }
+
     if (!segments.length) {
-      showPasteStatus('No flights found. Make sure the text includes a flight number, airports, and times.', 'error');
+      if (pasteStatus.style.display === 'none') {
+        showPasteStatus('No flights found. Make sure the text includes a flight number, airports, and times.', 'error');
+      }
       return;
     }
     renderFlights();
@@ -44,6 +54,54 @@
     flightPreview.style.display = 'block';
     requestAnimationFrame(() => flightPreview.classList.add('fade-in'));
   });
+
+  // ─── On-device AI fallback ────────────────────────────────────────────────
+
+  async function tryAiFallback(text) {
+    const hadPartial = segments.length > 0;
+    const noAiMsg = hadPartial
+      ? null // partial regex result is still shown; stay quiet
+      : 'No flights found with pattern matching. Chrome\u2019s built-in on-device AI could help, but it isn\u2019t available in this browser (needs Chrome 138+ with Gemini Nano). Try tidying the text so it includes a flight number, airports, and times.';
+
+    if (!FlightAI.isSupported()) {
+      if (noAiMsg) showPasteStatus(noAiMsg, 'error');
+      return;
+    }
+    const avail = await FlightAI.availability();
+    if (avail === 'unavailable') {
+      if (noAiMsg) showPasteStatus(noAiMsg, 'error');
+      return;
+    }
+
+    try {
+      parseBtn.disabled = true;
+      if (avail === 'available') {
+        showPasteStatus('Pattern matching came up short — asking Chrome\u2019s on-device AI. Nothing leaves your browser.', 'info');
+      } else {
+        showPasteStatus('Pattern matching came up short. Chrome\u2019s on-device AI can read this, but the model needs a one-time download first\u2026', 'info');
+      }
+      const aiSegments = await FlightAI.extract(text, (fraction) => {
+        showPasteStatus(`Downloading Chrome\u2019s on-device AI model\u2026 ${Math.round(fraction * 100)}% (one-time, stays on your device)`, 'info');
+      });
+      const complete = aiSegments.filter((s) => s.departure && s.arrival && s.departureTime && s.date);
+      if (complete.length) {
+        segments = aiSegments;
+        hidePasteStatus();
+      } else if (!hadPartial) {
+        showPasteStatus('No flights found — even the on-device AI couldn\u2019t read this. Check that the text includes airports and times.', 'error');
+      } else {
+        hidePasteStatus();
+      }
+    } catch (err) {
+      if (!hadPartial) {
+        showPasteStatus(`On-device AI couldn\u2019t run (${err.message}). Try editing the text so it includes a flight number, airports, and times.`, 'error');
+      } else {
+        hidePasteStatus();
+      }
+    } finally {
+      parseBtn.disabled = false;
+    }
+  }
 
   // ─── Render editable cards ────────────────────────────────────────────────
 
@@ -56,9 +114,12 @@
 
     html += segments.map((seg, i) => {
       const title = [seg.airlineName || seg.airlineCode, seg.flightNumber].filter(Boolean).join(' — ') || 'Flight';
+      const badge = seg.source === 'ai'
+        ? '<span class="src-badge src-badge-ai" title="Extracted by Chrome\u2019s built-in Gemini Nano, entirely on this device. Airports and timezones were still resolved deterministically.">on-device AI</span>'
+        : '<span class="src-badge" title="Extracted with the built-in pattern matcher.">pattern match</span>';
       return `
         <div class="event-card flight-card" data-index="${i}">
-          <div class="ev-title">${escapeHtml(title)}</div>
+          <div class="ev-title">${escapeHtml(title)} ${badge}</div>
           ${seg.confirmationCode ? `<div class="ev-meta"><span>Confirmation: ${escapeHtml(seg.confirmationCode)}</span></div>` : ''}
           <div class="flight-fields">
             <label>Date
