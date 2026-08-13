@@ -118,6 +118,17 @@ const FlightParser = (() => {
     'toronto':'YYZ','vancouver':'YVR','cancun':'CUN','mexico city':'MEX'
   };
 
+  // Normalized airport/city name → IATA lookup (data/airport-names.js).
+  // Loaded before parser.js in the popup; require()d in Node tests.
+  const AIRPORT_NAME_LOOKUP = (() => {
+    if (typeof AIRPORT_NAMES !== 'undefined') return AIRPORT_NAMES;
+    if (typeof module !== 'undefined' && typeof require !== 'undefined') {
+      try { return require('../data/airport-names.js'); } catch { /* optional */ }
+    }
+    return {};
+  })();
+  const HAS_NAME_LOOKUP = Object.keys(AIRPORT_NAME_LOOKUP).length > 0;
+
   // ─── Main Entry Point ───────────────────────────────────────────────────────
 
   function parseEmail(html, subject = '') {
@@ -243,10 +254,13 @@ const FlightParser = (() => {
   function extractDatesFromSegment(text) {
     const all = [];
     const pats = [
-      { r: /(?:(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)[a-z]*,?\s+)?(Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\s+(\d{1,2})(?:st|nd|rd|th)?,?\s*(\d{4})\b/gi,
-        p: m => normalizeDate(m[1], m[2], m[3]) },
+      { r: /(?:(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)[a-z]*,?\s+)?(Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\s+(\d{1,2})(?:st|nd|rd|th)?(?:,?\s*(\d{4}))?\b/gi,
+        p: m => normalizeDate(m[1], m[2], m[3] || inferYear(m[1], m[2])) },
       { r: /\b(\d{1,2})(?:st|nd|rd|th)?\s+(Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?),?\s*(\d{4})\b/gi,
         p: m => normalizeDate(m[2], m[1], m[3]) },
+      // Compact airline style: "28SEP", "28SEP26", "28SEP2026" (Delta itineraries)
+      { r: /\b(\d{1,2})(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)(\d{2}|\d{4})?\b/gi,
+        p: m => normalizeDate(m[2], m[1], expandYear(m[3]) || inferYear(m[2], m[1])) },
       { r: /\b(\d{1,2})\/(\d{1,2})\/(\d{4})\b/g,
         p: m => `${m[3]}-${m[1].padStart(2,'0')}-${m[2].padStart(2,'0')}` },
       { r: /\b(\d{4})-(\d{2})-(\d{2})\b/g,
@@ -297,6 +311,12 @@ const FlightParser = (() => {
     while ((m = cp.exec(text)) !== null) {
       if (COMMON_AIRPORTS.has(m[1]) && !seen.has(m[1])) { found.push(m[1]); seen.add(m[1]); if (found.length >= 2) return found; }
     }
+    // Airport/city names via the generated lookup (CHICAGO-OHARE → ORD)
+    if (found.length < 2) {
+      for (const code of findAirportsByName(text)) {
+        if (!seen.has(code)) { found.push(code); seen.add(code); if (found.length >= 2) return found; }
+      }
+    }
     // City names (longest first)
     if (found.length < 2) {
       const low = text.toLowerCase();
@@ -306,6 +326,82 @@ const FlightParser = (() => {
       }
     }
     return found;
+  }
+
+  // ─── Name-Based Airport Resolution ──────────────────────────────────────────
+
+  /** Same normalization the generator applies to lookup keys. */
+  function normalizeNameKey(str) {
+    return str
+      .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+      .toUpperCase()
+      .replace(/[^A-Z0-9]/g, '');
+  }
+
+  /**
+   * Finds IATA codes inside a cell's words by trying contiguous word spans,
+   * longest first, so "Chicago O'Hare" beats a bare "Chicago" city match.
+   */
+  function scanWordsForAirports(words) {
+    const matches = [];
+    const used = new Array(words.length).fill(false);
+    const maxSpan = Math.min(6, words.length);
+    for (let span = maxSpan; span >= 1; span--) {
+      for (let i = 0; i + span <= words.length; i++) {
+        if (used.slice(i, i + span).some(Boolean)) continue;
+        const key = normalizeNameKey(words.slice(i, i + span).join(''));
+        if (key.length < 5) continue;
+        const code = AIRPORT_NAME_LOOKUP[key];
+        if (code) {
+          matches.push({ i, code });
+          for (let k = i; k < i + span; k++) used[k] = true;
+        }
+      }
+    }
+    matches.sort((a, b) => a.i - b.i);
+    return matches.map((x) => x.code);
+  }
+
+  /**
+   * Scans free text for airport/city names, returning IATA codes in text
+   * order. Handles columnar layouts: lines are split into cells on tabs,
+   * runs of spaces, and punctuation; hyphens/slashes separate words so
+   * "NYC-LAGUARDIA" resolves via its LAGUARDIA token.
+   */
+  function findAirportsByName(text) {
+    if (!HAS_NAME_LOOKUP) return [];
+    const out = [], seen = new Set();
+    for (const line of text.split('\n')) {
+      for (const cell of line.split(/\t|\s{2,}|[():;,]/)) {
+        const words = cell.trim().split(/[\s\-\/.'’]+/).filter(Boolean);
+        if (!words.length || words.length > 12) continue;
+        for (const code of scanWordsForAirports(words)) {
+          if (!seen.has(code)) { seen.add(code); out.push(code); }
+        }
+      }
+    }
+    return out;
+  }
+
+  /**
+   * Resolves a single airport reference — IATA code, airport name, or city
+   * name — to an IATA code. Used by the popup and the on-device AI fallback
+   * (the model returns names; deterministic code picks the airport).
+   */
+  function resolveAirport(input) {
+    if (!input) return null;
+    const raw = String(input).trim();
+    if (/^[A-Za-z]{3}$/.test(raw) && COMMON_AIRPORTS.has(raw.toUpperCase())) return raw.toUpperCase();
+    const byName = findAirportsByName(raw);
+    if (byName.length) return byName[0];
+    const low = raw.toLowerCase();
+    const sorted = Object.entries(CITY_TO_AIRPORT).sort((a, b) => b[0].length - a[0].length);
+    for (const [city, code] of sorted) {
+      if (low.includes(city)) return code;
+    }
+    // Unknown 3-letter token: assume it's a code; timezone lookup validates later.
+    if (/^[A-Za-z]{3}$/.test(raw)) return raw.toUpperCase();
+    return null;
   }
 
   function extractTimesFromSegment(text) {
@@ -368,6 +464,27 @@ const FlightParser = (() => {
     const months = { jan:'01',feb:'02',mar:'03',apr:'04',may:'05',jun:'06',jul:'07',aug:'08',sep:'09',oct:'10',nov:'11',dec:'12' };
     const m = months[month.substring(0, 3).toLowerCase()];
     return `${year}-${m}-${day.padStart(2, '0')}`;
+  }
+
+  /** "26" → "2026"; passes 4-digit years through; undefined stays undefined. */
+  function expandYear(y) {
+    if (!y) return null;
+    return y.length === 2 ? `20${y}` : y;
+  }
+
+  /**
+   * Year inference for dates without one ("28SEP", "Sep 28"): current year,
+   * unless that date is more than 2 days in the past — then next year.
+   */
+  function inferYear(month, day) {
+    const months = { jan:0,feb:1,mar:2,apr:3,may:4,jun:5,jul:6,aug:7,sep:8,oct:9,nov:10,dec:11 };
+    const m = months[month.substring(0, 3).toLowerCase()];
+    const now = new Date();
+    let year = now.getFullYear();
+    const candidate = new Date(year, m, parseInt(day));
+    const cutoff = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 2);
+    if (candidate < cutoff) year += 1;
+    return String(year);
   }
 
   function isPlausibleFlightDate(dateStr) {
@@ -479,9 +596,27 @@ const FlightParser = (() => {
 
   // ─── Public API ─────────────────────────────────────────────────────────────
 
+  /** Parses "9:30 AM" / "09:30" / "12:49PM" style strings → "HH:MM" (24h). */
+  function normalizeTimeText(s) {
+    if (!s) return null;
+    const m = String(s).match(/(\d{1,2}):(\d{2})\s*(AM|PM|am|pm|a\.m\.|p\.m\.)?/);
+    if (!m) return null;
+    return normalizeTime(m[1] + ':' + m[2], m[3]);
+  }
+
+  /** Parses any supported date format in a string → "YYYY-MM-DD" or null. */
+  function parseDateText(s) {
+    if (!s) return null;
+    const dates = extractDatesFromSegment(String(s));
+    return dates[0] || null;
+  }
+
   return {
     parseEmail,
     isFlightConfirmation,
+    resolveAirport,
+    normalizeTimeText,
+    parseDateText,
     AIRLINE_CODES,
     COMMON_AIRPORTS
   };
