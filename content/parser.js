@@ -174,7 +174,9 @@ const FlightParser = (() => {
       const pos = positions[i];
       const start = Math.max(0, pos.index - 200);
       const end = positions[i + 1] ? positions[i + 1].index : Math.min(pos.index + 800, text.length);
-      const seg = buildSegment(text.substring(start, end), pos, airline);
+      // Extract from text AFTER the flight number first — the 200-char
+      // look-back is only a fallback, so leg N+1 never inherits leg N's data.
+      const seg = buildSegment(text.substring(start, end), pos, airline, text.substring(pos.index, end));
       if (seg) segments.push(seg);
     }
     return segments;
@@ -213,10 +215,14 @@ const FlightParser = (() => {
     return positions;
   }
 
-  function buildSegment(segText, info, airline) {
-    const dates = extractDatesFromSegment(segText);
-    const airports = extractAirportsFromSegment(segText);
-    const times = extractTimesFromSegment(segText);
+  function buildSegment(segText, info, airline, afterText) {
+    const primary = afterText || segText;
+    let dates = extractDatesFromSegment(primary);
+    if (!dates.length) dates = extractDatesFromSegment(segText);
+    let airports = extractAirportsFromSegment(primary);
+    if (airports.length < 2) airports = extractAirportsFromSegment(segText);
+    let times = extractTimesFromSegment(primary);
+    if (!times.departure && !times.all.length) times = extractTimesFromSegment(segText);
     return {
       flightNumber: info.full,
       airlineCode: info.airline,
@@ -349,6 +355,10 @@ const FlightParser = (() => {
   // ─── Helpers ────────────────────────────────────────────────────────────────
 
   function stripHtml(html) {
+    // Plain text (or non-browser context): skip the DOM round-trip
+    if (!html.includes('<') || typeof document === 'undefined') {
+      return html.replace(/<[^>]*>/g, ' ');
+    }
     const tmp = document.createElement('div');
     tmp.innerHTML = html;
     return tmp.textContent || tmp.innerText || '';
@@ -476,3 +486,7 @@ const FlightParser = (() => {
     COMMON_AIRPORTS
   };
 })();
+
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = FlightParser;
+}
