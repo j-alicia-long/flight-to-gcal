@@ -16,7 +16,9 @@ const path = require('path');
 const FlightParser = require('../content/parser.js');
 const FlightTz = require('../lib/timezone.js');
 const FlightCalendar = require('../lib/calendar.js');
+const FlightAI = require('../popup/ai-fallback.js');
 const AIRPORT_TIMEZONES = require('../data/airport-timezones.js');
+const AIRPORT_NAMES = require('../data/airport-names.js');
 
 let passed = 0;
 let failed = 0;
@@ -95,6 +97,93 @@ console.log('\nParser: flight confirmation detection');
 {
   check('delta detected', FlightParser.isFlightConfirmation('Your Flight Receipt', sample('delta.txt')), true);
   check('unrelated not detected', FlightParser.isFlightConfirmation('Lunch tomorrow?', 'See you at noon at the corner cafe.'), false);
+}
+
+console.log('\nParser: Delta columnar sample (real-world, airport names not codes)');
+{
+  // Verbatim paste that originally failed: city/airport NAMES, tab-separated
+  // columns, compact "28SEP" date with no year.
+  const segs = FlightParser.parseEmail(sample('delta-columnar.txt'));
+  check('one leg', segs.length, 1);
+  const s = segs[0] || {};
+  check('flight number', s.flightNumber, 'DL 1642');
+  check('airline', s.airlineName, 'Delta Air Lines');
+  check('route resolved from names', [s.departure, s.arrival], ['ORD', 'LGA']);
+  check('times', [s.departureTime, s.arrivalTime], ['09:30', '12:49']);
+  // Year is inferred: current year, or next year if Sep 28 is >2 days past.
+  const now = new Date();
+  const expYear = new Date(now.getFullYear(), 8, 28) < new Date(now.getFullYear(), now.getMonth(), now.getDate() - 2)
+    ? now.getFullYear() + 1 : now.getFullYear();
+  check('date with inferred year', s.date, `${expYear}-09-28`);
+
+  // The point of the fix: correct timezones on both ends.
+  const res = FlightCalendar.flightToEvent(s);
+  check('event ok', res.ok, true);
+  check('dep tz America/Chicago', res.event.depTz, 'America/Chicago');
+  check('arr tz America/New_York', res.event.arrTz, 'America/New_York');
+  // 09:30 CDT = 14:30Z, 12:49 EDT = 16:49Z → 2h19m in the air.
+  check('duration 2h19m', Math.round((res.event.endUtc - res.event.startUtc) / 60000), 139);
+}
+
+console.log('\nParser: airport name → IATA resolution');
+{
+  check('CHICAGO-OHARE', FlightParser.resolveAirport('CHICAGO-OHARE'), 'ORD');
+  check('NYC-LAGUARDIA', FlightParser.resolveAirport('NYC-LAGUARDIA'), 'LGA');
+  check('Heathrow', FlightParser.resolveAirport('Heathrow'), 'LHR');
+  check("Chicago O'Hare International Airport", FlightParser.resolveAirport("Chicago O'Hare International Airport"), 'ORD');
+  check('bare IATA code passes through', FlightParser.resolveAirport('jfk'), 'JFK');
+  check('city alias Los Angeles', FlightParser.resolveAirport('Los Angeles'), 'LAX');
+  check('unknown gibberish → null', FlightParser.resolveAirport('Not An Airport Anywhere'), null);
+  check('lookup only contains airports with timezones',
+    Object.values(AIRPORT_NAMES).filter(code => !AIRPORT_TIMEZONES[code]), []);
+}
+
+console.log('\nParser: loose date/time helpers');
+{
+  const now = new Date();
+  const expYear = new Date(now.getFullYear(), 8, 28) < new Date(now.getFullYear(), now.getMonth(), now.getDate() - 2)
+    ? now.getFullYear() + 1 : now.getFullYear();
+  check('28SEP infers year', FlightParser.parseDateText('28SEP'), `${expYear}-09-28`);
+  check('28SEP26 explicit short year', FlightParser.parseDateText('28SEP26'), '2026-09-28');
+  check('full date still works', FlightParser.parseDateText('June 15, 2026'), '2026-06-15');
+  check('12:49PM no space', FlightParser.normalizeTimeText('12:49PM'), '12:49');
+  check('9:05 am', FlightParser.normalizeTimeText('9:05 am'), '09:05');
+  check('12:15 AM → 00:15', FlightParser.normalizeTimeText('12:15 AM'), '00:15');
+  check('24h passthrough', FlightParser.normalizeTimeText('18:40'), '18:40');
+}
+
+console.log('\nAI fallback: deterministic normalization of model output');
+{
+  // Simulates what Gemini Nano returns (strings as written in the email);
+  // normalizeFlights must resolve names/dates/times with the SAME pipeline
+  // as the regex parser — the model never produces timezones or UTC.
+  const segs = FlightAI.normalizeFlights([{
+    airline: 'Delta', flightNumber: '1642', date: 'Mon, 28SEP',
+    departureAirport: 'CHICAGO-OHARE', arrivalAirport: 'NYC-LAGUARDIA',
+    departureTime: '09:30AM', arrivalTime: '12:49PM'
+  }]);
+  check('one flight', segs.length, 1);
+  const s = segs[0] || {};
+  check('airline code from name', s.airlineCode, 'DL');
+  check('flight number assembled', s.flightNumber, 'DL 1642');
+  check('airports resolved', [s.departure, s.arrival], ['ORD', 'LGA']);
+  check('times normalized', [s.departureTime, s.arrivalTime], ['09:30', '12:49']);
+  check('tagged as AI', s.source, 'ai');
+
+  check('empty fields tolerated',
+    FlightAI.normalizeFlights([{ airline: '', flightNumber: '', date: '', departureAirport: '', arrivalAirport: '', departureTime: '', arrivalTime: '' }]),
+    []);
+}
+
+console.log('\nAI fallback: trigger conditions');
+{
+  check('empty parse triggers', FlightAI.isIncomplete([]), true);
+  check('missing airports triggers',
+    FlightAI.isIncomplete([{ departure: null, arrival: 'LGA', date: '2026-09-28', departureTime: '09:30' }]), true);
+  check('missing date triggers',
+    FlightAI.isIncomplete([{ departure: 'ORD', arrival: 'LGA', date: null, departureTime: '09:30' }]), true);
+  check('complete parse does not trigger',
+    FlightAI.isIncomplete([{ departure: 'ORD', arrival: 'LGA', date: '2026-09-28', departureTime: '09:30', arrivalTime: '12:49' }]), false);
 }
 
 // ─── 2. Timezone conversion ───────────────────────────────────────────────────
