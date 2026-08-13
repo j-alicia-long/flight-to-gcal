@@ -401,6 +401,7 @@ const AIRPORT_TIMEZONES = {
   "BEO": "Australia/Sydney",
   "BEP": "Asia/Calcutta",
   "BEQ": "Europe/London",
+  "BER": "Europe/Berlin",
   "BES": "Europe/Paris",
   "BET": "America/Anchorage",
   "BEU": "Australia/Brisbane",
