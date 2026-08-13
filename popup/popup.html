@@ -3,17 +3,37 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>ICS to Google Calendar</title>
+  <title>Flight to Google Calendar</title>
   <link rel="stylesheet" href="popup.css">
 </head>
 <body>
   <div class="container">
     <header>
       <img src="../5CoKQqq01.svg" alt="Logo">
-      <h1>ICS to Google Calendar</h1>
-      <p class="tagline">Instantly add events — no sign-in required</p>
+      <h1>Flight to Google Calendar</h1>
+      <p class="tagline">Paste a confirmation — get a calendar event</p>
     </header>
 
+    <!-- Tabs -->
+    <nav class="tabs">
+      <button class="tab active" data-tab="paste" id="tabPasteBtn">Paste flight</button>
+      <button class="tab" data-tab="ics" id="tabIcsBtn">Upload .ics</button>
+    </nav>
+
+    <!-- Paste flight tab -->
+    <section id="tab-paste" class="tab-pane active">
+      <div class="paste-zone">
+        <textarea id="flightText" rows="7" placeholder="Paste your flight confirmation email text here…"></textarea>
+        <button id="parseBtn" class="btn-open-all">Find flights</button>
+      </div>
+      <div id="flight-preview" class="event-preview" style="display:none;">
+        <div id="flight-list"></div>
+      </div>
+      <div id="paste-status" class="status" style="display:none;"></div>
+    </section>
+
+    <!-- Upload .ics tab -->
+    <section id="tab-ics" class="tab-pane">
     <!-- Upload area -->
     <div id="drop-zone" class="drop-zone">
       <div class="drop-icon">
@@ -34,14 +54,20 @@
 
     <!-- Status message -->
     <div id="status" class="status" style="display:none;"></div>
+    </section>
 
     <footer>
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-      <p>Your files stay on your device — nothing is uploaded</p>
+      <p>Your data stays on your device — nothing is uploaded</p>
     </footer>
   </div>
 
   <script src="ical.min.js"></script>
+  <script src="../data/airport-timezones.js"></script>
+  <script src="../lib/timezone.js"></script>
+  <script src="../lib/calendar.js"></script>
+  <script src="../content/parser.js"></script>
   <script src="popup.js"></script>
+  <script src="paste.js"></script>
 </body>
 </html>

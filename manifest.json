@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "ICS to Google Calendar",
-  "version": "1.0",
-  "description": "Upload a .ics file and open it directly in Google Calendar. No account access needed.",
+  "name": "Flight to Google Calendar",
+  "version": "1.1",
+  "description": "Paste flight confirmation text or upload .ics files — get timezone-correct Google Calendar events. Fully offline, zero permissions.",
   "action": {
     "default_popup": "popup/popup.html",
     "default_icon": "icon48.png"
@@ -12,5 +12,5 @@
     "48": "icon48.png",
     "128": "icon128.png"
   },
-  "permissions": ["tabs"]
+  "permissions": []
 }

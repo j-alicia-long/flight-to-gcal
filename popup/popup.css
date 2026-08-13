@@ -258,6 +258,144 @@ footer p {
   font-weight: 500;
 }
 
+/* Tabs */
+.tabs {
+  display: flex;
+  gap: 6px;
+  margin: 0 20px 14px;
+  padding: 4px;
+  background: #f1f5f9;
+  border-radius: 14px;
+}
+
+.tab {
+  flex: 1;
+  padding: 8px 10px;
+  border: none;
+  border-radius: 10px;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  color: #64748b;
+  background: transparent;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.tab:hover {
+  color: #1a1a2e;
+}
+
+.tab.active {
+  background: #ffffff;
+  color: #1a1a2e;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+
+.tab-pane {
+  display: none;
+}
+
+.tab-pane.active {
+  display: block;
+}
+
+/* Paste zone */
+.paste-zone {
+  margin: 0 20px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.paste-zone.collapsed {
+  display: none;
+}
+
+.paste-zone textarea {
+  width: 100%;
+  padding: 12px 14px;
+  border: 2px dashed #e2e8f0;
+  border-radius: 16px;
+  font-family: inherit;
+  font-size: 12px;
+  color: #1e293b;
+  background: #ffffff;
+  resize: vertical;
+  transition: border-color 0.2s ease;
+}
+
+.paste-zone textarea:focus {
+  outline: none;
+  border-color: #ff9500;
+  border-style: solid;
+}
+
+.paste-zone .btn-open-all {
+  margin-bottom: 0;
+}
+
+/* Editable flight fields */
+.flight-fields {
+  display: grid;
+  grid-template-columns: 1.4fr 1fr 1fr;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.flight-fields label {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  font-size: 10px;
+  font-weight: 700;
+  color: #94a3b8;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
+.flight-fields input {
+  width: 100%;
+  padding: 7px 8px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  color: #1e293b;
+  background: #f8fafc;
+  min-width: 0;
+}
+
+.flight-fields input:focus {
+  outline: none;
+  border-color: #ff9500;
+  background: #ffffff;
+}
+
+.tz-summary {
+  margin-top: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #3B3486;
+}
+
+.field-error {
+  margin-top: 8px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  font-size: 12px;
+  font-weight: 500;
+  background: #fef2f2;
+  color: #dc2626;
+  border: 1px solid #fecaca;
+}
+
+.ics-download-wrap {
+  margin-top: 12px;
+}
+
 /* Multi-event header */
 .events-header {
   font-size: 12px;
