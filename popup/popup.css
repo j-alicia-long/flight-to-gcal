@@ -1,0 +1,354 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  width: 360px;
+  font-family: 'SF Pro Rounded', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background: linear-gradient(180deg, #fff7ed 0%, #ffffff 40%);
+  color: #1e293b;
+}
+
+.container {
+  display: flex;
+  flex-direction: column;
+}
+
+/* Header */
+header {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 22px 20px 16px;
+}
+
+header img {
+  width: 56px;
+  height: 56px;
+  flex-shrink: 0;
+  filter: drop-shadow(0 4px 12px rgba(255, 149, 0, 0.3));
+  margin-bottom: 4px;
+}
+
+header h1 {
+  font-size: 17px;
+  font-weight: 800;
+  color: #1a1a2e;
+  letter-spacing: -0.2px;
+}
+
+.tagline {
+  font-size: 12px;
+  color: #94a3b8;
+  font-weight: 500;
+}
+
+/* Drop Zone */
+.drop-zone {
+  margin: 0 20px 16px;
+  padding: 32px 20px;
+  border: 2px dashed #e2e8f0;
+  border-radius: 20px;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.25s ease;
+  background: #ffffff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+}
+
+.drop-zone:hover {
+  border-color: #ff9500;
+  background: #fff9f0;
+  box-shadow: 0 4px 16px rgba(255, 149, 0, 0.1);
+  transform: translateY(-1px);
+}
+
+.drop-zone.drag-over {
+  border-color: #ff9500;
+  background: #fff3e0;
+  box-shadow: 0 4px 20px rgba(255, 149, 0, 0.2);
+  transform: translateY(-2px);
+}
+
+.drop-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 56px;
+  height: 56px;
+  border-radius: 16px;
+  background: linear-gradient(135deg, #fff7ed, #ffedd5);
+  margin-bottom: 12px;
+}
+
+.drop-zone svg {
+  color: #f59e0b;
+}
+
+.drop-zone p {
+  font-size: 14px;
+  color: #475569;
+  line-height: 1.6;
+  font-weight: 500;
+}
+
+.drop-zone p span {
+  color: #94a3b8;
+  font-weight: 400;
+  font-size: 12px;
+}
+
+/* Event Preview */
+.event-preview {
+  padding: 0 20px 10px;
+  max-height: 340px;
+  overflow-y: auto;
+  opacity: 0;
+  transform: translateY(6px);
+  transition: opacity 0.3s ease, transform 0.3s ease;
+}
+
+.event-preview.fade-in {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* Custom scrollbar */
+.event-preview::-webkit-scrollbar {
+  width: 6px;
+}
+
+.event-preview::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.event-preview::-webkit-scrollbar-thumb {
+  background: #d1d5db;
+  border-radius: 3px;
+}
+
+.event-preview::-webkit-scrollbar-thumb:hover {
+  background: #9ca3af;
+}
+
+.event-card {
+  background: #ffffff;
+  border: 1px solid #f1f5f9;
+  border-radius: 16px;
+  padding: 14px;
+  margin-bottom: 10px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04);
+  transition: box-shadow 0.2s;
+}
+
+.event-card:hover {
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+}
+
+.event-card:last-child {
+  margin-bottom: 0;
+}
+
+.ev-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: #1a1a2e;
+  margin-bottom: 6px;
+  word-break: break-word;
+}
+
+.ev-meta {
+  font-size: 12px;
+  color: #64748b;
+  line-height: 1.6;
+}
+
+.ev-meta span {
+  display: block;
+}
+
+.ev-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+/* Buttons */
+.btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 10px 16px;
+  border: none;
+  border-radius: 12px;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  flex: 1;
+  text-decoration: none;
+}
+
+.btn-gcal {
+  background: #3B3486;
+  color: white;
+  box-shadow: 0 2px 8px rgba(59, 52, 134, 0.3);
+}
+
+.btn-gcal:hover {
+  background: #2E2869;
+  box-shadow: 0 4px 12px rgba(59, 52, 134, 0.4);
+  transform: translateY(-1px);
+}
+
+.btn-outline {
+  background: #f8fafc;
+  color: #475569;
+  border: 1px solid #e2e8f0;
+}
+
+.btn-outline:hover {
+  background: #f1f5f9;
+  border-color: #cbd5e1;
+}
+
+/* Status */
+.status {
+  margin: 0 20px 10px;
+  padding: 10px 14px;
+  border-radius: 14px;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.status-error {
+  background: #fef2f2;
+  color: #dc2626;
+  border: 1px solid #fecaca;
+}
+
+.status-success {
+  background: #f0fdf4;
+  color: #16a34a;
+  border: 1px solid #bbf7d0;
+}
+
+/* Footer */
+footer {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 12px 20px 16px;
+}
+
+footer svg {
+  color: #a3e635;
+  flex-shrink: 0;
+}
+
+footer p {
+  font-size: 11px;
+  color: #94a3b8;
+  font-weight: 500;
+}
+
+/* Multi-event header */
+.events-header {
+  font-size: 12px;
+  font-weight: 600;
+  color: #64748b;
+  margin-bottom: 10px;
+}
+
+.btn-open-all {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  padding: 12px;
+  margin-bottom: 12px;
+  border: none;
+  border-radius: 14px;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  background: #3B3486;
+  color: white;
+  box-shadow: 0 2px 8px rgba(59, 52, 134, 0.3);
+  transition: all 0.2s ease;
+}
+
+.btn-open-all:hover {
+  background: #2E2869;
+  box-shadow: 0 4px 12px rgba(59, 52, 134, 0.4);
+  transform: translateY(-1px);
+}
+
+/* File group label (shown when multiple files uploaded) */
+.file-group-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: #f97316;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 8px 0 4px;
+  margin-top: 6px;
+  border-top: 1px solid #f1f5f9;
+}
+
+.file-group-label:first-of-type {
+  border-top: none;
+  margin-top: 0;
+}
+
+/* Fade-out transition for drop zone */
+.drop-zone.fade-out {
+  opacity: 0;
+  transform: translateY(-6px);
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+/* Loading state */
+.drop-zone.loading {
+  pointer-events: none;
+  border-color: #f59e0b;
+  background: #fffbeb;
+}
+
+.loading-dots::after {
+  content: '';
+  animation: dots 1.2s steps(4, end) infinite;
+}
+
+@keyframes dots {
+  0%   { content: ''; }
+  25%  { content: '.'; }
+  50%  { content: '..'; }
+  75%  { content: '...'; }
+  100% { content: ''; }
+}
+
+/* Reset / upload-more link */
+.reset-link-wrap {
+  text-align: center;
+  margin-top: 10px;
+}
+
+.reset-link {
+  font-size: 12px;
+  color: #4285f4;
+  text-decoration: none;
+  font-weight: 500;
+}
+
+.reset-link:hover {
+  text-decoration: underline;
+}
