@@ -51,6 +51,63 @@ const FlightParser = (() => {
     'SJU','GIG','MBJ','NAS','PUJ'
   ]);
 
+  // Every IATA code we ship a timezone for (5,500+). COMMON_AIRPORTS is a
+  // hand-picked subset safe to match as a bare word; this is the full set,
+  // used only where surrounding syntax already marks a token as an airport
+  // — "(ATH)", "ATH → JNX", "departing ATH". Without it, any airport
+  // outside the curated list (most of Europe and Asia) parsed to null even
+  // though its timezone was sitting right there in data/.
+  const KNOWN_AIRPORTS = (() => {
+    const tz = typeof AIRPORT_TIMEZONES !== 'undefined'
+      ? AIRPORT_TIMEZONES
+      : (() => {
+          if (typeof module !== 'undefined' && typeof require !== 'undefined') {
+            try { return require('../data/airport-timezones.js'); } catch { /* optional */ }
+          }
+          return null;
+        })();
+    return tz ? new Set(Object.keys(tz)) : null;
+  })();
+
+  // Real IATA codes that are also common words in a confirmation email, so
+  // they must never be inferred from the wider dataset. Codes that are also
+  // major airports (SEA, IST, BUS…) stay reachable via COMMON_AIRPORTS.
+  const AMBIGUOUS_CODES = new Set([
+    // Months and weekdays
+    'JAN','MAR','MAY','JUL','AUG','SEP','OCT','NOV','DEC',
+    'MON','TUE','WED','THU','FRI','SAT','SUN',
+    // Timezone abbreviations
+    'UTC','GMT','EST','EDT','CST','CDT','MST','MDT','PST','PDT',
+    'BST','CET','JST','AST','HST',
+    // Currencies
+    'USD','EUR','GBP','JPY','CHF','CAD','AUD','SEK','NOK','DKK',
+    'PLN','CZK','HUF','CNY','KRW','BRL','MXN','ZAR','SGD','HKD',
+    // Itinerary and fare-table jargon
+    'TAX','FEE','NET','AMT','VAT','SUM','TOT','MIN','HRS','SEC',
+    'DAY','AGE','ADT','CHD','INF','BAG','PNR','ETA','ETD','TBD',
+    'AIR','JET','NON','PER','VIA','VAN','CAR','ONE','TWO','NEW',
+    'ALL','AND','THE','FOR','ARE','NOT','ANY','CAN','HAS','TOP',
+    'END','LOW','BIG','RED','VIP','PAX','ROW','ADD','MID','FAR',
+    'DUE','YES','SET','GET','ECO','OUT','FLY','SUB','SIT','TRN'
+  ]);
+
+  /**
+   * True when `code` may be treated as an airport.
+   * strict (default): only the curated COMMON_AIRPORTS list — for bare
+   *   3-letter words, where a false positive is easy to create.
+   * loose: the full shipped dataset minus AMBIGUOUS_CODES — for tokens whose
+   *   syntax already says "airport" (parentheses, route arrow, depart/arrive).
+   */
+  const LOOSE = { strict: false };
+
+  function isAirportCode(code, { strict = true } = {}) {
+    if (!code) return false;
+    const c = String(code).toUpperCase();
+    if (COMMON_AIRPORTS.has(c)) return true;
+    if (strict || !KNOWN_AIRPORTS) return false;
+    return KNOWN_AIRPORTS.has(c) && !AMBIGUOUS_CODES.has(c);
+  }
+
   const AIRLINE_CODES = {
     'DL':'Delta Air Lines','UA':'United Airlines','AA':'American Airlines',
     'WN':'Southwest Airlines','B6':'JetBlue Airways','NK':'Spirit Airlines',
@@ -261,8 +318,14 @@ const FlightParser = (() => {
       // Compact airline style: "28SEP", "28SEP26", "28SEP2026" (Delta itineraries)
       { r: /\b(\d{1,2})(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)(\d{2}|\d{4})?\b/gi,
         p: m => normalizeDate(m[2], m[1], expandYear(m[3]) || inferYear(m[2], m[1])) },
-      { r: /\b(\d{1,2})\/(\d{1,2})\/(\d{4})\b/g,
-        p: m => `${m[3]}-${m[1].padStart(2,'0')}-${m[2].padStart(2,'0')}` },
+      // Slash dates, tolerating spaces around the separators
+      // ("09 / 11 / 2026") and 2-digit years ("09/11/26"). An adjacent
+      // weekday is captured so DD/MM vs MM/DD can be settled deterministically.
+      { r: /(?:\b(Mon|Tue|Wed|Thu|Fri|Sat|Sun)[a-z]*,?\s+)?\b(\d{1,2})\s*\/\s*(\d{1,2})\s*\/\s*(\d{2,4})\b/gi,
+        p: m => resolveNumericDate(m[2], m[3], m[4], m[1]) },
+      // Dot/dash dates, the European written norm ("11.09.2026", "11-09-2026").
+      { r: /(?:\b(Mon|Tue|Wed|Thu|Fri|Sat|Sun)[a-z]*,?\s+)?\b(\d{1,2})\s*([.\-])\s*(\d{1,2})\s*\3\s*(\d{2,4})\b/gi,
+        p: m => resolveNumericDate(m[2], m[4], m[5], m[1], true) },
       { r: /\b(\d{4})-(\d{2})-(\d{2})\b/g,
         p: m => `${m[1]}-${m[2]}-${m[3]}` }
     ];
@@ -287,29 +350,43 @@ const FlightParser = (() => {
     let m;
     // Route patterns
     const routes = [
-      /\(([A-Z]{3})\)\s*(?:to|→|->|—|–)\s*\(([A-Z]{3})\)/,
-      /\b([A-Z]{3})\s*(?:→|->|—|–)\s*([A-Z]{3})\b/
+      /\(([A-Z]{3})\)\s*(?:to|→|->|—|–|-)\s*(?:[^()\n]{0,60}?\s*)?\(([A-Z]{3})\)/,
+      /\b([A-Z]{3})\s*(?:→|->|—|–|-)\s*([A-Z]{3})\b/
     ];
     for (const r of routes) {
       m = text.match(r);
-      if (m && COMMON_AIRPORTS.has(m[1]) && COMMON_AIRPORTS.has(m[2])) return [m[1], m[2]];
+      if (m && isAirportCode(m[1], LOOSE) && isAirportCode(m[2], LOOSE)) {
+        return [m[1].toUpperCase(), m[2].toUpperCase()];
+      }
     }
     // Parenthesized codes
     const pp = /\(([A-Z]{3})\)/g;
     while ((m = pp.exec(text)) !== null) {
-      if (COMMON_AIRPORTS.has(m[1]) && !seen.has(m[1])) { found.push(m[1]); seen.add(m[1]); }
+      if (isAirportCode(m[1], LOOSE) && !seen.has(m[1])) { found.push(m[1]); seen.add(m[1]); }
     }
     if (found.length >= 2) return found.slice(0, 2);
     // Labeled
     const dm = text.match(/(?:depart|from|origin|leaving)[^]*?\b([A-Z]{3})\b/i);
     const am = text.match(/(?:arriv|destination|landing)[^]*?\b([A-Z]{3})\b/i);
-    if (dm && COMMON_AIRPORTS.has(dm[1].toUpperCase()) && !seen.has(dm[1].toUpperCase())) { found.push(dm[1].toUpperCase()); seen.add(dm[1].toUpperCase()); }
-    if (am && COMMON_AIRPORTS.has(am[1].toUpperCase()) && !seen.has(am[1].toUpperCase())) { found.push(am[1].toUpperCase()); seen.add(am[1].toUpperCase()); }
+    if (dm && isAirportCode(dm[1], LOOSE) && !seen.has(dm[1].toUpperCase())) { found.push(dm[1].toUpperCase()); seen.add(dm[1].toUpperCase()); }
+    if (am && isAirportCode(am[1], LOOSE) && !seen.has(am[1].toUpperCase())) { found.push(am[1].toUpperCase()); seen.add(am[1].toUpperCase()); }
     if (found.length >= 2) return found.slice(0, 2);
     // Standalone known codes
     const cp = /\b([A-Z]{3})\b/g;
     while ((m = cp.exec(text)) !== null) {
-      if (COMMON_AIRPORTS.has(m[1]) && !seen.has(m[1])) { found.push(m[1]); seen.add(m[1]); if (found.length >= 2) return found; }
+      if (isAirportCode(m[1]) && !seen.has(m[1])) { found.push(m[1]); seen.add(m[1]); if (found.length >= 2) return found; }
+    }
+    // Time-adjacent codes: "07:45 ATH", "ATH 07:45" — a clock time next to a
+    // 3-letter token is a strong airport signal, so allow the full dataset.
+    if (found.length < 2) {
+      const tc = /(?:\d{1,2}:\d{2}\s*(?:[AaPp]\.?[Mm]\.?)?\s*\b([A-Z]{3})\b|\b([A-Z]{3})\b\s*\d{1,2}:\d{2})/g;
+      while ((m = tc.exec(text)) !== null) {
+        const code = (m[1] || m[2]).toUpperCase();
+        if (isAirportCode(code, LOOSE) && !seen.has(code)) {
+          found.push(code); seen.add(code);
+          if (found.length >= 2) return found;
+        }
+      }
     }
     // Airport/city names via the generated lookup (CHICAGO-OHARE → ORD)
     if (found.length < 2) {
@@ -350,7 +427,11 @@ const FlightParser = (() => {
       for (let i = 0; i + span <= words.length; i++) {
         if (used.slice(i, i + span).some(Boolean)) continue;
         const key = normalizeNameKey(words.slice(i, i + span).join(''));
-        if (key.length < 5) continue;
+        // 4 chars, not 5: the curated aliases include real 4-letter city
+        // names (Bali, Nice, Oslo, Cork, Pisa, Lyon) that a 5-char floor
+        // made unreachable. The generator still only derives keys of 5+,
+        // so this only opens up the hand-checked alias list.
+        if (key.length < 4) continue;
         const code = AIRPORT_NAME_LOOKUP[key];
         if (code) {
           matches.push({ i, code });
@@ -391,7 +472,7 @@ const FlightParser = (() => {
   function resolveAirport(input) {
     if (!input) return null;
     const raw = String(input).trim();
-    if (/^[A-Za-z]{3}$/.test(raw) && COMMON_AIRPORTS.has(raw.toUpperCase())) return raw.toUpperCase();
+    if (/^[A-Za-z]{3}$/.test(raw) && isAirportCode(raw, LOOSE)) return raw.toUpperCase();
     const byName = findAirportsByName(raw);
     if (byName.length) return byName[0];
     const low = raw.toLowerCase();
@@ -464,6 +545,53 @@ const FlightParser = (() => {
     const months = { jan:'01',feb:'02',mar:'03',apr:'04',may:'05',jun:'06',jul:'07',aug:'08',sep:'09',oct:'10',nov:'11',dec:'12' };
     const m = months[month.substring(0, 3).toLowerCase()];
     return `${year}-${m}-${day.padStart(2, '0')}`;
+  }
+
+  const WEEKDAYS = { sun:0, mon:1, tue:2, wed:3, thu:4, fri:5, sat:6 };
+
+  /**
+   * Resolves an ambiguous numeric date ("09 / 11 / 2026") to YYYY-MM-DD.
+   *
+   * 09/11 is Sep 11 to a US carrier and 9 Nov to a European one, and the
+   * digits alone cannot say which. Order of evidence:
+   *   1. Only one ordering is a real calendar date (25/12 → 25 Dec).
+   *   2. A weekday is printed alongside it ("Fri 09 / 11 / 2026" → the
+   *      ordering whose date is actually a Friday). Confirmations almost
+   *      always print one, and it is unambiguous when they do.
+   *   3. Neither resolves it → the separator's convention: dots and dashes
+   *      are the European DD.MM norm, slashes default to US MM/DD.
+   * Returns null when neither ordering is a valid date.
+   */
+  function resolveNumericDate(a, b, year, weekday, dayFirst = false) {
+    const y = expandYear(year);
+    const first = parseInt(a, 10);
+    const second = parseInt(b, 10);
+    const mdy = isRealDate(y, first, second) ? ymd(y, first, second) : null;   // MM/DD
+    const dmy = isRealDate(y, second, first) ? ymd(y, second, first) : null;   // DD/MM
+    if (!mdy) return dmy;
+    if (!dmy) return mdy;
+    if (mdy === dmy) return mdy;
+
+    const wd = weekday && WEEKDAYS[weekday.slice(0, 3).toLowerCase()];
+    if (wd !== undefined && wd !== false) {
+      if (dayOfWeek(mdy) === wd) return mdy;
+      if (dayOfWeek(dmy) === wd) return dmy;
+    }
+    return dayFirst ? dmy : mdy;
+  }
+
+  function ymd(y, month, day) {
+    return `${y}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+  }
+
+  function isRealDate(y, month, day) {
+    if (!(month >= 1 && month <= 12) || !(day >= 1)) return false;
+    return day <= new Date(Date.UTC(Number(y), month, 0)).getUTCDate();
+  }
+
+  function dayOfWeek(dateStr) {
+    const [y, m, d] = dateStr.split('-').map(Number);
+    return new Date(Date.UTC(y, m - 1, d)).getUTCDay();
   }
 
   /** "26" → "2026"; passes 4-digit years through; undefined stays undefined. */

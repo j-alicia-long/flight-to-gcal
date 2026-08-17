@@ -288,6 +288,122 @@ console.log('\nOutput: GCal URL and .ics');
     ics.startsWith('BEGIN:VCALENDAR') && ics.trim().endsWith('END:VCALENDAR'), true);
 }
 
+console.log('\nParser: Greek island itinerary (non-US codes, spaced slash date)');
+{
+  // Verbatim paste that originally failed. Two independent bugs: the date
+  // "09 / 11 / 2026" (spaces around the slashes) parsed to null, and ATH/JNX
+  // sit outside the curated COMMON_AIRPORTS list even though their timezones
+  // ship in data/. No flight number at all, so this goes through the fallback.
+  const segs = FlightParser.parseEmail(sample('aegean-greek-islands.txt'));
+  check('one leg', segs.length, 1);
+  const s = segs[0] || {};
+  check('route', [s.departure, s.arrival], ['ATH', 'JNX']);
+  check('spaced slash date', s.date, '2026-09-11');
+  check('times', [s.departureTime, s.arrivalTime], ['07:45', '08:25']);
+
+  // The whole point: a usable calendar event, in Athens time, not an error.
+  const res = FlightCalendar.flightToEvent(s);
+  check('event ok', res.ok, true);
+  check('dep tz', res.event.depTz, 'Europe/Athens');
+  check('arr tz', res.event.arrTz, 'Europe/Athens');
+  check('40 minute hop', Math.round((res.event.endUtc - res.event.startUtc) / 60000), 40);
+  check('start UTC (EEST = +3)', res.event.startUtc.toISOString(), '2026-09-11T04:45:00.000Z');
+}
+
+console.log('\nParser: non-US airport codes resolve');
+{
+  // Codes outside COMMON_AIRPORTS, only reachable now that the parser falls
+  // back to the full shipped dataset for syntactically-marked tokens.
+  const cases = [
+    ['ATH', 'Europe/Athens'], ['JNX', 'Europe/Athens'], ['JTR', 'Europe/Athens'],
+    ['JMK', 'Europe/Athens'], ['VCE', 'Europe/Rome'], ['FLR', 'Europe/Rome'],
+    ['AGP', 'Europe/Madrid'], ['OPO', 'Europe/Lisbon'], ['KRK', 'Europe/Warsaw'],
+    ['SPU', 'Europe/Zagreb'], ['KEF', 'Atlantic/Reykjavik'], ['AYT', 'Europe/Istanbul'],
+    ['KIX', 'Asia/Tokyo'], ['CTS', 'Asia/Tokyo'], ['PUS', 'Asia/Seoul'],
+    ['CAN', 'Asia/Shanghai'], ['SGN', 'Asia/Ho_Chi_Minh'], ['HKT', 'Asia/Bangkok'],
+    ['DPS', 'Asia/Makassar'], ['MAA', 'Asia/Kolkata'], ['HYD', 'Asia/Kolkata'],
+    ['CMB', 'Asia/Colombo'], ['ISB', 'Asia/Karachi'], ['NQZ', 'Asia/Almaty']
+  ];
+  check('all resolve via resolveAirport',
+    cases.filter(([code]) => FlightParser.resolveAirport(code) !== code).map(([c]) => c), []);
+  // Compared by resulting UTC instant, not string: the dataset ships legacy
+  // IANA aliases (Asia/Saigon, Asia/Calcutta) that are correct but not canonical.
+  const sameZone = (a, b) => a === b ||
+    FlightTz.zonedTimeToUtc('2026-09-11', '07:45', a).getTime() ===
+    FlightTz.zonedTimeToUtc('2026-09-11', '07:45', b).getTime();
+  check('all have the expected timezone',
+    cases.filter(([code, tz]) => !AIRPORT_TIMEZONES[code] || !sameZone(AIRPORT_TIMEZONES[code], tz))
+         .map(([c, tz]) => `${c}: expected ${tz}, got ${AIRPORT_TIMEZONES[c]}`), []);
+
+  // Parenthesized and arrow routes pull non-US codes out of prose.
+  const paren = FlightParser.parseEmail('Flight A3 352\nSat, 14 March 2026\nAthens (ATH) to Santorini (JTR)\nDeparts 10:15\nArrives 11:00');
+  check('paren route non-US', [paren[0].departure, paren[0].arrival], ['ATH', 'JTR']);
+  const arrow = FlightParser.parseEmail('TK 1846\n3 April 2026\nIST → ATH\nDepart 08:00 Arrive 09:20');
+  check('arrow route non-US', [arrow[0].departure, arrow[0].arrival], ['IST', 'ATH']);
+}
+
+console.log('\nParser: European city and airport names → IATA');
+{
+  const cases = [
+    ['Eleftherios Venizelos', 'ATH'], ['Naxos Airport', 'JNX'],
+    ['Athens', 'ATH'], ['Santorini', 'JTR'], ['Mykonos', 'JMK'],
+    ['Heraklion', 'HER'], ['Rhodes', 'RHO'], ['Corfu', 'CFU'],
+    ['Venice', 'VCE'], ['Florence', 'FLR'], ['Naples', 'NAP'],
+    ['Prague', 'PRG'], ['Budapest', 'BUD'], ['Krakow', 'KRK'],
+    ['Split', 'SPU'], ['Dubrovnik', 'DBV'], ['Reykjavik', 'KEF'],
+    ['Osaka', 'KIX'], ['Bali', 'DPS'], ['Phuket', 'HKT'],
+    ['Hanoi', 'HAN'], ['Ho Chi Minh City', 'SGN'], ['Bengaluru', 'BLR'],
+    ['Kathmandu', 'KTM'], ['Colombo', 'CMB'], ['Male', 'MLE']
+  ];
+  const wrong = cases
+    .map(([name, code]) => [name, code, FlightParser.resolveAirport(name)])
+    .filter(([, code, got]) => got !== code)
+    .map(([name, code, got]) => `${name}: expected ${code}, got ${got}`);
+  check('all resolve to the primary airport', wrong, []);
+}
+
+console.log('\nParser: date formats (incl. day-first disambiguation)');
+{
+  check('spaced slashes', FlightParser.parseDateText('09 / 11 / 2026'), '2026-09-11');
+  check('2-digit year', FlightParser.parseDateText('09/11/26'), '2026-09-11');
+  // Dot and dash separators are the European written norm, so an ambiguous
+  // pair reads day-first: 11.09.2026 is 11 September, not 9 November.
+  check('dotted European is day-first', FlightParser.parseDateText('11.09.2026'), '2026-09-11');
+  check('dashed is day-first', FlightParser.parseDateText('09-11-2026'), '2026-11-09');
+  check('ISO untouched', FlightParser.parseDateText('2026-09-11'), '2026-09-11');
+  // >12 in the first slot can only be a day, so MM/DD is impossible.
+  check('day-first when unambiguous', FlightParser.parseDateText('25 / 12 / 2026'), '2026-12-25');
+  check('day-first dotted', FlightParser.parseDateText('25.12.2026'), '2026-12-25');
+  // A weekday in the text settles a genuinely ambiguous date. 2026-09-11 is a
+  // Friday; 2026-11-09 is a Monday. Same digits, different reading.
+  check('weekday picks MM/DD', FlightParser.parseDateText('Fri 09 / 11 / 2026'), '2026-09-11');
+  check('weekday picks DD/MM', FlightParser.parseDateText('Mon 09 / 11 / 2026'), '2026-11-09');
+  check('weekday spelled out', FlightParser.parseDateText('Monday 09/11/2026'), '2026-11-09');
+  check('no weekday defaults to MM/DD', FlightParser.parseDateText('09 / 11 / 2026'), '2026-09-11');
+}
+
+console.log('\nParser: airport-code false positives');
+{
+  // Widening beyond COMMON_AIRPORTS must not turn fare-table jargon, month
+  // abbreviations, or currency codes into airports. Each string below is a
+  // real IATA code AND a word that shows up in confirmation emails.
+  const noise = [
+    'Total USD 342.00', 'TAX 41.20', 'Fare basis: ADT', '1 BAG included',
+    'PNR ABC123', 'Departs 09:30 EST', 'Arrives 12:49 PDT', 'VAT included',
+    'Mon 28 SEP', 'Booked NOV 2026', 'GBP 210.00', 'ETA 11:40'
+  ];
+  const leaked = noise.filter((t) => {
+    const segs = FlightParser.parseEmail(t);
+    return segs.length && (segs[0].departure || segs[0].arrival);
+  });
+  check('no airports invented from jargon', leaked, []);
+
+  // Bare 3-letter words still require the curated list, so an obscure code
+  // mentioned in passing does not become a route.
+  check('bare obscure code ignored',
+    FlightParser.parseEmail('Your bag tag reads NQZ and the seat is 14A').length, 0);
+}
+
 // ─── 5. Dataset coverage ──────────────────────────────────────────────────────
 
 console.log('\nDataset: airport timezone coverage');

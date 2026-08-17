@@ -9,7 +9,9 @@ Everything runs **locally in your browser** - no servers, no accounts, zero exte
 ## Features
 
 - **40+ airlines** - Delta, United, American, Southwest, JetBlue, and friends ([full list](https://github.com/j-alicia-long/flight-to-gcal/wiki/Supported-airlines))
-- **Airport and city names**, not just codes - `CHICAGO-OHARE`, `Heathrow`, `NYC-LaGuardia` all resolve via a bundled lookup (14,000+ entries)
+- **Airport and city names**, not just codes - `CHICAGO-OHARE`, `Heathrow`, `NYC-LaGuardia`, `Eleftherios Venizelos` all resolve via a bundled lookup (14,000+ entries)
+- **Worldwide, not just US** - any of the 5,500+ shipped airports resolves when the text marks it as one (`(ATH)`, `ATH → JNX`, `07:45 ATH`), so Europe and Asia itineraries work
+- **International date formats** - `09 / 11 / 2026`, `11.09.2026`, `09/11/26`; day-first vs month-first is settled by the weekday printed on the ticket
 - **Timezone-correct, DST included** - departure and arrival each use their own airport's timezone (5,500+ airports)
 - **On-device AI fallback** - if the regexes can't read a confirmation, Chrome's built-in Gemini Nano (Chrome 138+) takes a pass
 - **Editable preview** - fix any field before adding; multi-leg trips become one event per leg

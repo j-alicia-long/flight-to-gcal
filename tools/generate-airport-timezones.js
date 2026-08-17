@@ -29,7 +29,12 @@ const NAMES_OUT_PATH = path.join(__dirname, '..', 'data', 'airport-names.js');
 const OVERRIDES = {
   DOH: 'Asia/Qatar',
   IST: 'Europe/Istanbul',
-  BER: 'Europe/Berlin'
+  BER: 'Europe/Berlin',
+  // Rows exist upstream but carry \N in the tz column, so the parse loop
+  // drops them. All three are hubs referenced by NAME_ALIASES below.
+  HYD: 'Asia/Kolkata',
+  ISB: 'Asia/Karachi',
+  NQZ: 'Asia/Almaty'
 };
 
 // ─── Name-lookup generation ───────────────────────────────────────────────────
@@ -85,7 +90,60 @@ const NAME_ALIASES = {
   ZURICH: 'ZRH', VIENNA: 'VIE', ISTANBUL: 'IST', DUBAI: 'DXB',
   HONGKONG: 'HKG', BANGKOK: 'BKK', SEOUL: 'ICN', TAIPEI: 'TPE',
   MUMBAI: 'BOM', NEWDELHI: 'DEL', JOHANNESBURG: 'JNB',
-  BUENOSAIRES: 'EZE', SANTIAGO: 'SCL', AUCKLAND: 'AKL'
+  BUENOSAIRES: 'EZE', SANTIAGO: 'SCL', AUCKLAND: 'AKL',
+  // Europe — metros dropped as ambiguous because a smaller airfield shares
+  // the city name (Athens GA, Venice/Treviso, Naples FL). Pick the primary
+  // international airport, same rule as the US metros above.
+  ATHENS: 'ATH', RHODES: 'RHO', CORFU: 'CFU', HERAKLION: 'HER',
+  CHANIA: 'CHQ', SANTORINI: 'JTR', MYKONOS: 'JMK', NAXOS: 'JNX',
+  VENICE: 'VCE', FLORENCE: 'FLR', NAPLES: 'NAP', PISA: 'PSA',
+  BOLOGNA: 'BLQ', TURIN: 'TRN', VERONA: 'VRN', CATANIA: 'CTA',
+  PALERMO: 'PMO', BARI: 'BRI', CAGLIARI: 'CAG',
+  VALENCIA: 'VLC', SEVILLE: 'SVQ', MALAGA: 'AGP', BILBAO: 'BIO',
+  ALICANTE: 'ALC', PALMA: 'PMI', IBIZA: 'IBZ', LASPALMAS: 'LPA',
+  PORTO: 'OPO', FARO: 'FAO', LISBON: 'LIS',
+  NICE: 'NCE', LYON: 'LYS', MARSEILLE: 'MRS', TOULOUSE: 'TLS',
+  BORDEAUX: 'BOD', NANTES: 'NTE', GENEVA: 'GVA', BASEL: 'BSL',
+  HAMBURG: 'HAM', COLOGNE: 'CGN', STUTTGART: 'STR', DUSSELDORF: 'DUS',
+  HANOVER: 'HAJ', NUREMBERG: 'NUE', BREMEN: 'BRE', LEIPZIG: 'LEJ',
+  SALZBURG: 'SZG', INNSBRUCK: 'INN', GRAZ: 'GRZ',
+  PRAGUE: 'PRG', BUDAPEST: 'BUD', WARSAW: 'WAW', KRAKOW: 'KRK',
+  GDANSK: 'GDN', WROCLAW: 'WRO', BUCHAREST: 'OTP', SOFIA: 'SOF',
+  BELGRADE: 'BEG', ZAGREB: 'ZAG', SPLIT: 'SPU', DUBROVNIK: 'DBV',
+  LJUBLJANA: 'LJU', SARAJEVO: 'SJJ', SKOPJE: 'SKP', TIRANA: 'TIA',
+  BRATISLAVA: 'BTS', TALLINN: 'TLL', RIGA: 'RIX', VILNIUS: 'VNO',
+  HELSINKI: 'HEL', OSLO: 'OSL', BERGEN: 'BGO', STOCKHOLM: 'ARN',
+  GOTHENBURG: 'GOT', COPENHAGEN: 'CPH', BILLUND: 'BLL',
+  REYKJAVIK: 'KEF', DUBLIN: 'DUB', CORK: 'ORK', SHANNON: 'SNN',
+  EDINBURGH: 'EDI', GLASGOW: 'GLA', MANCHESTER: 'MAN',
+  BRISTOL: 'BRS', NEWCASTLE: 'NCL', BRUSSELS: 'BRU',
+  ROTTERDAM: 'RTM', EINDHOVEN: 'EIN', LUXEMBOURG: 'LUX',
+  VALLETTA: 'MLA', LARNACA: 'LCA', PAPHOS: 'PFO', KYIV: 'KBP',
+  ANTALYA: 'AYT', IZMIR: 'ADB', BODRUM: 'BJV',
+  // Asia — same treatment. GOA is deliberately NOT aliased to Goa/India:
+  // GOA is Genoa's real IATA code, so the alias would silently retimezone
+  // Genoa flights to Asia/Kolkata. Goa stays reachable via DABOLIM/GOADABOLIM.
+  OSAKA: 'KIX', KYOTO: 'KIX', NAGOYA: 'NGO', FUKUOKA: 'FUK',
+  SAPPORO: 'CTS', OKINAWA: 'OKA', NAHA: 'OKA', BUSAN: 'PUS',
+  JEJU: 'CJU', GUANGZHOU: 'CAN', SHENZHEN: 'SZX', CHENGDU: 'CTU',
+  XIAN: 'XIY', HANGZHOU: 'HGH', CHONGQING: 'CKG', QINGDAO: 'TAO',
+  XIAMEN: 'XMN', KUNMING: 'KMG', WUHAN: 'WUH', TIANJIN: 'TSN',
+  MACAU: 'MFM', KAOHSIUNG: 'KHH', HANOI: 'HAN', SAIGON: 'SGN',
+  HOCHIMINH: 'SGN', HOCHIMINHCITY: 'SGN', DANANG: 'DAD',
+  PHNOMPENH: 'PNH', SIEMREAP: 'REP', VIENTIANE: 'VTE', YANGON: 'RGN',
+  PHUKET: 'HKT', CHIANGMAI: 'CNX', KRABI: 'KBV',
+  MANILA: 'MNL', CEBU: 'CEB', JAKARTA: 'CGK', DENPASAR: 'DPS',
+  BALI: 'DPS', SURABAYA: 'SUB', PENANG: 'PEN', LANGKAWI: 'LGK',
+  KOTAKINABALU: 'BKI', CHENNAI: 'MAA', KOLKATA: 'CCU',
+  BENGALURU: 'BLR', BANGALORE: 'BLR', HYDERABAD: 'HYD',
+  KOCHI: 'COK', AHMEDABAD: 'AMD', JAIPUR: 'JAI', PUNE: 'PNQ',
+  LUCKNOW: 'LKO', TRIVANDRUM: 'TRV', COLOMBO: 'CMB', MALE: 'MLE',
+  KATHMANDU: 'KTM', DHAKA: 'DAC', KARACHI: 'KHI', LAHORE: 'LHE',
+  ISLAMABAD: 'ISB', TASHKENT: 'TAS', ALMATY: 'ALA', ASTANA: 'NQZ',
+  BAKU: 'GYD', TBILISI: 'TBS', YEREVAN: 'EVN', MUSCAT: 'MCT',
+  KUWAIT: 'KWI', BAHRAIN: 'BAH', RIYADH: 'RUH', JEDDAH: 'JED',
+  DAMMAM: 'DMM', AMMAN: 'AMM', BEIRUT: 'BEY', ABUDHABI: 'AUH',
+  SHARJAH: 'SHJ'
 };
 
 const MIN_KEY_LENGTH = 5;
